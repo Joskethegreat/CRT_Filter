@@ -28,6 +28,7 @@ On start, drag to select an area, or press **F** for fullscreen. **Esc** cancels
 | M | Binary or soft contrast mode |
 | I / S / A | Invert / scanlines / auto threshold |
 | 1–9, 0 | Color: green, blue, red, purple, yellow, cyan, amber, pink, orange, white |
+| P | Screenshot |
 | H | Help overlay |
 | Esc | Quit (in fullscreen: exit fullscreen) |
 
@@ -41,6 +42,7 @@ Global hotkeys work even when the window isn't focused:
 | Ctrl+Alt+ + / - | Threshold |
 | Ctrl+Alt+I | Invert |
 | Ctrl+Alt+1–9, 0 | Color (same order as above) |
+| Ctrl+Alt+P | Screenshot of the filtered view, saved as PNG to `Pictures\CRT_Filter` |
 | Ctrl+Alt+Q | Quit |
 
 Fullscreen is click-through, so you can keep using the PC underneath it.

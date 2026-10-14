@@ -6,8 +6,10 @@ the area it captures: it always shows a filtered version of whatever is undernea
 import ctypes
 import sys
 from ctypes import wintypes
+from datetime import datetime
 from functools import reduce
 from operator import or_
+from pathlib import Path
 
 import mss
 import numpy as np
@@ -80,6 +82,7 @@ Ctrl+wheel      contrast (soft mode)
 M  soft/binary   I  invert
 S  scanlines     A  auto threshold
 H  this help     Esc  quit
+P  screenshot (Pictures\\CRT_Filter)
 1-9, 0  color: green blue red purple yellow
         cyan amber pink orange white
 
@@ -90,6 +93,7 @@ Ctrl+Alt+C  click-through on/off
 Ctrl+Alt+ + / -  threshold
 Ctrl+Alt+I  invert
 Ctrl+Alt+1-9, 0  color
+Ctrl+Alt+P  screenshot
 Ctrl+Alt+Q  quit
 Esc (fullscreen)  exit fullscreen"""
 
@@ -208,6 +212,7 @@ class FilterWindow(QWidget):
             ord("R"): self.reselect,
             ord("C"): self.toggle_click_through,
             ord("I"): self.toggle_invert,
+            ord("P"): self.screenshot,
             ord("Q"): self.quit,
             VK_OEM_PLUS: lambda: self.nudge_threshold(+8),
             VK_OEM_MINUS: lambda: self.nudge_threshold(-8),
@@ -399,6 +404,19 @@ class FilterWindow(QWidget):
         self.show()
         self.toggle_fullscreen()
 
+    def screenshot(self):
+        """Save the current filtered frame (without HUD/help) as a PNG."""
+        if self.image is None or not self.isVisible():
+            return
+        folder = Path.home() / "Pictures" / "CRT_Filter"
+        folder.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")[:-3]  # millisecond precision
+        path = folder / f"crt_{stamp}.png"
+        if self.image.save(str(path), "PNG"):
+            self.hud(f"saved {path}", 3000)
+        else:
+            self.hud("screenshot failed", 3000)
+
     def quit(self):
         QApplication.quit()
 
@@ -436,6 +454,8 @@ class FilterWindow(QWidget):
             self.toggle_scanlines()
         elif key == Qt.Key_A:
             self.toggle_auto()
+        elif key == Qt.Key_P:
+            self.screenshot()
         elif key == Qt.Key_H:
             self.toggle_help()
         elif key == Qt.Key_F11:
@@ -517,6 +537,7 @@ class FilterWindow(QWidget):
             action.setChecked(index == self.color_index)
             action.triggered.connect(lambda _=False, index=index: self.set_color(index))
         menu.addSeparator()
+        item("Screenshot", self.screenshot, None, "Ctrl+Alt+P")
         item("Help", self.toggle_help, self.show_help, "H")
         item("Quit", self.quit, None, "Ctrl+Alt+Q")
         menu.exec(e.globalPos())
