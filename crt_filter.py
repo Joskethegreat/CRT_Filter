@@ -72,6 +72,21 @@ def make_palette(peak):
     r, g, b = peak
     return [QColor(r * i // 255, g * i // 255, b * i // 255).rgb() for i in range(256)]
 
+
+# Phosphor glow levels cycled with G: (name, brightness of the halo added on top).
+GLOW_LEVELS = [("off", 0.0), ("soft", 0.7), ("strong", 1.4)]
+GLOW_SCALE = 4    # the halo is computed at 1/4 resolution, then smoothly upscaled
+GLOW_RADIUS = 2   # box blur radius at that resolution (two passes ~ gaussian)
+
+
+def box_blur(a, r):
+    """Separable box blur of a 2D float array with edge padding (rows, then columns)."""
+    k = 2 * r + 1
+    for _ in range(2):
+        c = np.cumsum(np.pad(a, ((0, 0), (r + 1, r)), mode="edge"), axis=1)
+        a = ((c[:, k:] - c[:, :-k]) / k).T   # transpose so the second pass blurs columns
+    return a
+
 HELP = """CRT FILTER
 drag            move window
 drag edges      resize
@@ -81,6 +96,7 @@ wheel / Up/Dn   threshold
 Ctrl+wheel      contrast (soft mode)
 M  soft/binary   I  invert
 S  scanlines     A  auto threshold
+G  glow off/soft/strong
 H  this help     Esc  quit
 P  screenshot (Pictures\\CRT_Filter)
 1-9, 0  color: green blue red purple yellow
@@ -194,6 +210,9 @@ class FilterWindow(QWidget):
         self.sct = mss.MSS() if hasattr(mss, "MSS") else mss.mss()
         self.frame = None   # keeps the numpy buffer alive while the QImage uses it
         self.image = None
+        self.glow = 1       # index into GLOW_LEVELS
+        self.glow_frame = None
+        self.glow_image = None
 
         self.hud_text = ""
         self.hud_ms = 0
@@ -267,6 +286,7 @@ class FilterWindow(QWidget):
             out *= 255
         if self.invert:
             np.subtract(255, out, out=out)
+        self.make_glow(out)   # before scanlines, so the halo also softens the dark rows
         if self.scanlines:
             out[2::3] >>= 1
 
@@ -276,10 +296,34 @@ class FilterWindow(QWidget):
         self.image.setColorTable(self.palette)
         self.update()
 
+    def make_glow(self, out):
+        """Blurred low-res copy of the frame; drawn additively it looks like phosphor bloom."""
+        strength = GLOW_LEVELS[self.glow][1]
+        h, w = out.shape[0] // GLOW_SCALE, out.shape[1] // GLOW_SCALE
+        if strength == 0 or h < 2 or w < 2:
+            self.glow_frame = self.glow_image = None
+            return
+        small = out[:h * GLOW_SCALE, :w * GLOW_SCALE].reshape(h, GLOW_SCALE, w, GLOW_SCALE)
+        small = small.mean(axis=(1, 3), dtype=np.float32)
+        halo = box_blur(box_blur(small, GLOW_RADIUS), GLOW_RADIUS)
+        self.glow_frame = np.clip(halo * strength, 0, 255).astype(np.uint8)
+        self.glow_image = QImage(self.glow_frame.data, w, h, w, QImage.Format_Indexed8)
+        self.glow_image.setColorTable(self.palette)
+
+    def draw_frame(self, p, rect):
+        """Draw the filtered frame plus its phosphor glow into rect."""
+        p.drawImage(rect, self.image)
+        if self.glow_image is not None:
+            p.save()
+            p.setCompositionMode(QPainter.CompositionMode_Plus)
+            p.setRenderHint(QPainter.SmoothPixmapTransform)
+            p.drawImage(rect, self.glow_image)
+            p.restore()
+
     def paintEvent(self, _):
         p = QPainter(self)
         if self.image is not None:
-            p.drawImage(self.rect(), self.image)
+            self.draw_frame(p, self.rect())
         else:
             p.fillRect(self.rect(), Qt.black)
 
@@ -324,9 +368,14 @@ class FilterWindow(QWidget):
     def set_color(self, index):
         self.color_index = index
         self.palette = make_palette(COLORS[index][1])
-        if self.image is not None:
-            self.image.setColorTable(self.palette)
+        for image in (self.image, self.glow_image):
+            if image is not None:
+                image.setColorTable(self.palette)
         self.hud("color: " + COLORS[index][0])
+
+    def cycle_glow(self):
+        self.glow = (self.glow + 1) % len(GLOW_LEVELS)
+        self.hud("glow: " + GLOW_LEVELS[self.glow][0])
 
     def toggle_invert(self):
         self.invert = not self.invert
@@ -412,7 +461,11 @@ class FilterWindow(QWidget):
         folder.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S-%f")[:-3]  # millisecond precision
         path = folder / f"crt_{stamp}.png"
-        if self.image.save(str(path), "PNG"):
+        shot = QImage(self.image.size(), QImage.Format_RGB32)
+        p = QPainter(shot)
+        self.draw_frame(p, shot.rect())
+        p.end()
+        if shot.save(str(path), "PNG"):
             self.hud(f"saved {path}", 3000)
         else:
             self.hud("screenshot failed", 3000)
@@ -454,6 +507,8 @@ class FilterWindow(QWidget):
             self.toggle_scanlines()
         elif key == Qt.Key_A:
             self.toggle_auto()
+        elif key == Qt.Key_G:
+            self.cycle_glow()
         elif key == Qt.Key_P:
             self.screenshot()
         elif key == Qt.Key_H:
@@ -529,6 +584,7 @@ class FilterWindow(QWidget):
         item("Invert", self.toggle_invert, self.invert, "I")
         item("Scanlines", self.toggle_scanlines, self.scanlines, "S")
         item("Auto threshold", self.toggle_auto, self.auto, "A")
+        item(f"Glow: {GLOW_LEVELS[self.glow][0]}", self.cycle_glow, None, "G")
         colors = menu.addMenu("Color")
         for index, (name, _) in enumerate(COLORS):
             key = chr(COLOR_KEYS[index])

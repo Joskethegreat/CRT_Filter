@@ -27,6 +27,7 @@ On start, drag to select an area, or press **F** for fullscreen. **Esc** cancels
 | Ctrl + wheel | Contrast (soft mode) |
 | M | Binary or soft contrast mode |
 | I / S / A | Invert / scanlines / auto threshold |
+| G | Phosphor glow: off / soft / strong |
 | 1–9, 0 | Color: green, blue, red, purple, yellow, cyan, amber, pink, orange, white |
 | P | Screenshot |
 | H | Help overlay |
